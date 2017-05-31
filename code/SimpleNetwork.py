@@ -78,7 +78,7 @@ class EncChanDecNN(object):
         channel = Channel(encoder.encoder_output, self.config)
 
         print(channel.chan_output)
-        decoder = DecoderMultiLSTM(channel.chan_output,self.sentence_placeholder,self.sentence_len_placeholder,
+        decoder = DecoderMultiLSTM(channel.chan_output,self.sentence_embeds,self.sentence_len_placeholder,
                                    self.batch_max_len, self.config)
         decoder.gen_decoder_nn(self.embeddings)
         print(decoder.dec_output)
