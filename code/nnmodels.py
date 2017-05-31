@@ -1,6 +1,53 @@
 import tensorflow.contrib.keras as tfk
 import tensorflow as tf
+import numpy as np
 
+class Config(object):
+    feature_size = 50
+    hidden_size = 100
+    batch_size = 32
+    n_epochs = 2
+    lr = 0.001
+    dropout = 0.5
+    print_after_batchs = 100
+    max_grad_norm = 5.
+    clip_gradients = True
+
+    # ===============  Encoder Parameters ==================
+    # Size of the biLSTMs at the encoder. ROWS are for
+    # fw (row 0) and bw (row1) directions and columns are for each layer
+    encoder = 1
+    biLSTMsizes = [[200, 200],
+                   [200, 200]]
+
+    numb_layers_enc = 2  # number of biLSTM layers at the encoder
+    numb_tx_bits = 300  # number of transmission bits
+
+    # ===============  Channel Parameters ==================
+    chan_params = {'type': 'erasure', 'keep_prob': 0.99}
+
+    # ===============  Decoder Parameters ==================
+    decoder = 2
+    rcv_bit_to_num = 800  # the output length of the first dense layer at rcv
+    max_time_step = 100  # max numb of words in the sentence
+    numb_layers_dec = 2  # number of LSTM layers at the decoder
+    LSTMsizes = [200,200]  # The size of each layer of the LSTM decoder
+    numb_words = 50004  # the total number of words in the vocabulary. Should be overwritten with embedding size/vocab data
+
+    def __init__(self,
+                 embed_path,
+                 w2n_path,
+                 train_path,
+                 val_path,
+                 model_path,
+                 constant_embeddings=True):
+        self.embed_path = embed_path
+        self.w2n_path = w2n_path
+        self.train_path = train_path
+        self.val_path = val_path
+        self.model_path = model_path
+        self.constant_embeddings = constant_embeddings
+        # self.chan_params = {'type': 'erasure', 'prob_erasure': 0.1}
 
 class Encoder(object):
     '''
@@ -86,7 +133,29 @@ class Encoder(object):
 
         return self.encoder_output
 
+def test_encoder():
+    tf.reset_default_graph()
+    
+    configs = Config(*([' ']*5))
+    configs.feature_size = 5
+    configs.hidden_size = 10
+    configs.batch_size = 8
+    configs.biLSTMsizes = [[9, 9,9],[9, 9,9]]
+    configs.numb_layers_enc = 3  # number of biLSTM layers at the encoder
+    configs.numb_tx_bits = 30  # number of transmission bits
 
+    len_max_inp = 25
+    enc_input = tf.random_normal([configs.batch_size,len_max_inp,configs.feature_size])
+    input_len = np.random.randint(int(len_max_inp/2),len_max_inp,configs.batch_size)
+    encoder = EncoderStackedBiLSTM(enc_input,input_len,configs)
+    enc_out = encoder.generate_encoder_nn()
+    
+    with tf.Session() as sess:
+        sess.run(tf.global_variables_initializer())
+        print(enc_out)
+        enc_outr = sess.run(enc_out)
+        
+    print(enc_outr)
 
 class EncoderStackedBiLSTM (Encoder):
     def __init__(self, enc_input, input_len, config):
@@ -99,13 +168,14 @@ class EncoderStackedBiLSTM (Encoder):
         through a dense layer with tanh activation to create the bits.
         :return: The output of the encoder
         '''
+        
         varNameScope = "Enc_biLSTM"
         with tf.variable_scope(varNameScope):
-            lstm_fw_cells = [tf.contrib.rnn.LSTMCell(num_units=fw_cell_size, state_is_tuple=False)
+            lstm_fw_cells = [tf.contrib.rnn.LSTMCell(num_units=fw_cell_size, state_is_tuple=True)
                              for fw_cell_size in self.biLSTM_sizes[0]]
-            lstm_bw_cells = [tf.contrib.rnn.LSTMCell(num_units=bw_cell_size, state_is_tuple=False)
+            lstm_bw_cells = [tf.contrib.rnn.LSTMCell(num_units=bw_cell_size, state_is_tuple=True)
                              for bw_cell_size in self.biLSTM_sizes[1]]
-
+            
             biLSTMOutput, biLSTMstateFW, biLSTMstateBW = tf.contrib.rnn.stack_bidirectional_dynamic_rnn(
                                                     cells_fw=lstm_fw_cells,
                                                     cells_bw=lstm_bw_cells,
@@ -115,33 +185,29 @@ class EncoderStackedBiLSTM (Encoder):
                                                     )
 
 
-            print(biLSTMstateFW)
-            # extract the last RNN output
-            #final_biLSTMOutput = self.extract_axis_1(biLSTMOutput,self.input_len)
-            final_biLSTMOutput = tf.concat([biLSTMstateFW[self.numb_layers_enc-1],
-                                            biLSTMstateBW[self.numb_layers_enc-1]], axis=-1)
-            print(final_biLSTMOutput)
+            # extract the last RNN output including c_state and m_state
+            final_biLSTMOutput = tf.concat(biLSTMstateFW[-1]+biLSTMstateBW[-1], axis=-1)
+            #print(final_biLSTMOutput)
 
-
+        # Dense layer to numb_tx_bits. 
         self.encoder_output = tfk.layers.Dense(self.numb_tx_bits, activation="tanh")(final_biLSTMOutput)
 
         tf.summary.histogram("EncOutput", self.encoder_output)
-
         return self.encoder_output
 
-    def extract_axis_1(self, rnn_outputs, data_len):
-        """
-        Get specified elements along the first axis of tensor.
-        :param rnn_outputs: Tensorflow tensor that will be subsetted.
-        :param data_len: The data length for each element in batch (one for each element along axis 0).
-        :return: Subsetted tensor.
-        """
-
-        batch_range = tf.range(tf.shape(rnn_outputs)[0])
-        indices = tf.stack([batch_range, data_len-1], axis=1)
-        res = tf.gather_nd(rnn_outputs, indices)
-
-        return res
+#    def extract_axis_1(self, rnn_outputs, data_len):
+#        """
+#        Get specified elements along the first axis of tensor.
+#        :param rnn_outputs: Tensorflow tensor that will be subsetted.
+#        :param data_len: The data length for each element in batch (one for each element along axis 0).
+#        :return: Subsetted tensor.
+#        """
+#
+#        batch_range = tf.range(tf.shape(rnn_outputs)[0])
+#        indices = tf.stack([batch_range, data_len-1], axis=1)
+#        res = tf.gather_nd(rnn_outputs, indices)
+#
+#        return res
 
 class Channel(object):
     '''
@@ -176,6 +242,7 @@ class Decoder(object):
         self.batch_max_len = batch_max_len # maximum length of the sentence in the batch
         self.dec_input = dec_input
         self.dec_output = None
+        self.feature_size = config.feature_size
         #self.dec_output = self.gen_decoder_nn(dec_input)
 
     def gen_decoder_nn(self):
@@ -189,49 +256,79 @@ class Decoder(object):
         self.dec_output = tfk.layers.Dense(self.numb_words, activation="softmax", name="Dec_Softmax")(LSTMoutput)
         return self.dec_output
 
+def test_decoder():
+    tf.reset_default_graph()
+    len_max_inp = 25
+    
+    configs = Config(*([' ']*5))
+    configs.feature_size = 5
+    configs.hidden_size = 10
+    configs.batch_size = 8
+    configs.biLSTMsizes = [[9, 9,9],[9, 9,9]]
+    configs.numb_layers_enc = 3  # number of biLSTM layers at the encoder
+    configs.numb_tx_bits = 30  # number of transmission bits
+    configs.LSTMsizes = [9,9]  # The size of each layer of the LSTM decoder
+    configs.rcv_bit_to_num = sum(configs.LSTMsizes)*2  # the output length of the first dense layer at rcv
+    configs.max_time_step = len_max_inp  # max numb of words in the sentence
+    configs.numb_layers_dec = 2  # number of LSTM layers at the decoder
+    configs.numb_words = 54  # the total number of words in the vocabulary. Should be overwritten with embedding size/vocab data
+    
+    embeddings = tf.random_normal([configs.numb_words,configs.feature_size])
+    enc_input = tf.random_normal([configs.batch_size,len_max_inp,configs.feature_size])
+    input_len = np.random.randint(int(len_max_inp/2),len_max_inp,configs.batch_size)
+    encoder = EncoderStackedBiLSTM(enc_input,input_len,configs)
+    dec_inp = encoder.generate_encoder_nn()
+    decoder = DecoderMultiLSTM(dec_inp,enc_input,input_len,len_max_inp,configs)
+    dec_out = decoder.gen_decoder_nn(embeddings)
+    
+    with tf.Session() as sess:
+        sess.run(tf.global_variables_initializer())
+        
+        dec_outr = sess.run(dec_out)
+        
+    print(dec_outr)
+    return dec_outr
+    
 class DecoderMultiLSTM(Decoder):
     def __init__(self, dec_input, corrSentense,sentence_len, batch_max_len, config):
         super(DecoderMultiLSTM, self).__init__(dec_input, batch_max_len,config)
         self.corrctSentense =  corrSentense
         self.sentence_len = sentence_len
 
-    def loop_function(self, prev, _):
-        return prev
-
-    def gen_decoder_nn(self):
+    def gen_decoder_nn(self,embeddings):
         denseOut = tfk.layers.Dense(self.rcv_bit_to_num,
                                     activation="tanh", name="Dec_Dense_BitToNum")(self.dec_input)
-
-        print(denseOut)
-        cell = tf.contrib.rnn.LSTMCell(num_units=self.LSTM_size[0], state_is_tuple=False)
+               
+        if self.numb_layers_dec==1:
+            cell = tf.contrib.rnn.LSTMCell(num_units=self.LSTM_size[0], state_is_tuple=True)
+            init_state = tf.contrib.rnn.LSTMStateTuple(*tf.split(denseOut,num_or_size_splits=2,axis=1))
         if self.numb_layers_dec>1:
             cell = tf.contrib.rnn.MultiRNNCell([tf.contrib.rnn.LSTMCell(
-                                            num_units=cell_size, state_is_tuple=False)
+                                            num_units=cell_size, state_is_tuple=True)
                                             for cell_size in self.LSTM_size])
-
+            init_state = tf.split(denseOut, num_or_size_splits=self.numb_layers_dec, axis=1)
+            init_state = tuple([tf.contrib.rnn.LSTMStateTuple(*tf.split(x,num_or_size_splits=2,axis=1)) for x in init_state])
+        
         helper = tf.contrib.seq2seq.TrainingHelper(inputs=self.corrctSentense,
                                                    sequence_length=self.sentence_len)
-        print(helper)
-        #split0, split1, split2, split3= tf.split(denseOut, num_or_size_splits=self.numb_layers_dec, axis=1)
-        #print('split0: ',split0 )
-        init_state = denseOut
-        if self.numb_layers_dec > 1:
-            init_state = tuple(tf.split(denseOut, num_or_size_splits=self.numb_layers_dec, axis=1))
-        print(init_state)
+        
+        decoder = tf.contrib.seq2seq.BasicDecoder(helper=helper,
+                                                  initial_state=init_state,
+                                                  cell=cell,
+                                                  output_layer=None)
+        
+        dyn_dec_output, _ = tf.contrib.seq2seq.dynamic_decode(decoder)
+                
+        decoder_inter_output = tfk.layers.Dense(self.feature_size,name='dec_rnn_to_embed_size')(dyn_dec_output.rnn_output)
+        shape_decoder_inter_output = tf.shape(decoder_inter_output)
+        self.dec_output = tf.reshape(
+                        tf.matmul(tf.reshape(decoder_inter_output,[-1,self.feature_size])
+                                    ,embeddings,transpose_b=True),
+                        [shape_decoder_inter_output[0],shape_decoder_inter_output[1],-1])
+        return self.dec_output
 
-        #tf.layers.dense(inputs=)
-
-        #split0, split1= tf.split(denseOut, num_or_size_splits=2, axis=1)
-        #init_state = tuple((split0, split1))
-
-        #print(init_state)
-        #print(self.corrctSentense)
-        decoder = tf.contrib.seq2seq.BasicDecoder(
-                                                helper=helper,
-                                                initial_state=init_state,
-                                                cell=cell,
-                                                output_layer=None
-                                                )
-        print(decoder)
-        decoder_output, final_dec_sate = tf.contrib.seq2seq.dynamic_decode(decoder)
-        print(decoder_output)
+    
+    
+if __name__=="__main__":
+    test_encoder()
+    dec_outr=test_decoder()

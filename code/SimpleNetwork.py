@@ -8,54 +8,10 @@ import nltk
 from nnmodels import EncoderStackedBiLSTM
 from nnmodels import Channel
 from nnmodels import DecoderMultiLSTM
+from nnmodels import Config
+from preprocess import UNK_ID,PAD_ID,START_ID,END_ID
 
 
-class Config(object):
-    feature_size = 50
-    hidden_size = 100
-    batch_size = 32
-    n_epochs = 2
-    lr = 0.001
-    dropout = 0.5
-    print_after_batchs = 100
-    max_grad_norm = 5.
-    clip_gradients = True
-
-    # ===============  Encoder Parameters ==================
-    # Size of the biLSTMs at the encoder. ROWS are for
-    # fw (row 0) and bw (row1) directions and columns are for each layer
-    encoder = 1
-    biLSTMsizes = [[200, 200],
-                   [200, 200]]
-
-    numb_layers_enc = 2  # number of biLSTM layers at the encoder
-    numb_tx_bits = 300  # number of transmission bits
-
-    # ===============  Channel Parameters ==================
-    chan_params = {'type': 'erasure', 'keep_prob': 0.99}
-
-    # ===============  Decoder Parameters ==================
-    decoder = 2
-    rcv_bit_to_num = 800  # the output length of the first dense layer at rcv
-    max_time_step = 100  # max numb of words in the sentence
-    numb_layers_dec = 2  # number of LSTM layers at the decoder
-    LSTMsizes = [200,200]  # The size of each layer of the LSTM decoder
-    numb_words = 50004  # the total number of words in the vocabulary. Should be overwritten with embedding size/vocab data
-
-    def __init__(self,
-                 embed_path,
-                 w2n_path,
-                 train_path,
-                 val_path,
-                 model_path,
-                 constant_embeddings=True):
-        self.embed_path = embed_path
-        self.w2n_path = w2n_path
-        self.train_path = train_path
-        self.val_path = val_path
-        self.model_path = model_path
-        self.constant_embeddings = constant_embeddings
-        # self.chan_params = {'type': 'erasure', 'prob_erasure': 0.1}
 
 
 class EncChanDecNN(object):
@@ -124,7 +80,7 @@ class EncChanDecNN(object):
         print(channel.chan_output)
         decoder = DecoderMultiLSTM(channel.chan_output,self.sentence_placeholder,self.sentence_len_placeholder,
                                    self.batch_max_len, self.config)
-        decoder.gen_decoder_nn()
+        decoder.gen_decoder_nn(self.embeddings)
         print(decoder.dec_output)
         return (encoder, channel, decoder)
 
@@ -135,7 +91,7 @@ class EncChanDecNN(object):
         with tf.name_scope("CrossEntLoss"):
             loss = tf.reduce_mean(
                 tf.nn.sparse_softmax_cross_entropy_with_logits(
-                    logits=self.decoder.dec_output, labels=self.sentence_placeholder))
+                    logits=self.decoder.dec_output, labels=self.sentence_placeholder)) #Need to add masks
             tf.summary.scalar("CrossEntLoss", loss)
 
         return loss
@@ -335,30 +291,44 @@ def dataset_to_token(file_path, word2num):
     return sentences
 
 
-def batches_pads(sentences_inp, batch_size, mode=0):
+def batches_pads(sentences_inp, batch_size=32, params={}):
     """ Creates batches.
     Inputs:
         sentences_inp - list of lists
+        batch_size - size of each batch
+        params- Additional parameters
+            'shuffle' (bool): Shuffle the input or not. Default False
+            'bucket' (bool): Group by same bucket size. Default False
+            'bucket_sizes' (list-of-increasing-int): Bucket boundaries. Default 4:5:40.
+            
         mode - 0: do nothing, 1: shuffle entries, 2: group sentences of the same size
     Returns:
         list of ([sentence_batch],[sentence_len_batch])
 
     Note:
-        <pad> is 1
+        <pad> is PAD_ID
     """
     padded_batches = []
     sentences = sentences_inp.copy()
     len_batches = []
-    if mode == 1:
-        # Shuffle indices
+    if params.get('shuffle',False):
+        # Shuffle indices so that each batch is different
         np.random.shuffle(sentences)
-    for ind in range(0, int(len(sentences) / batch_size) * batch_size, batch_size):
-        batch = sentences[ind:ind + batch_size]
-        sen_len_batch = [len(x) for x in batch]
-        max_len_batch = max(sen_len_batch)
-        pad_batch = [x + [1] * (max_len_batch - len(x)) for x in batch]
-        padded_batches += [(pad_batch, sen_len_batch)]
-        len_batches += [max_len_batch]
+    if params.get('bucket',False):
+        # Tensorflow's method - very experimental
+        bucket_sizes = params.get('bucket_sizes',list(range(4,40,5)))
+        len_batches,outputs = tf.contrib.training.bucket_by_sequence_length(
+                len(sentences_inp),sentences_inp,batch_size,bucket_sizes,dynamic_pad=True)
+        padded_batches = [(x,[]) for x in outputs]
+    else:
+        # Homebrewed method without bucketing
+        for ind in range(0, int(len(sentences) / batch_size) * batch_size, batch_size):
+            batch = sentences[ind:ind + batch_size]
+            sen_len_batch = [len(x) for x in batch]
+            max_len_batch = max(sen_len_batch)
+            pad_batch = [x + [PAD_ID] * (max_len_batch - len(x)) for x in batch]
+            padded_batches += [(pad_batch, sen_len_batch)]
+            len_batches += [max_len_batch]
     return padded_batches, len_batches
 
 
@@ -379,6 +349,7 @@ def test_input():
 
 
 if __name__ == '__main__':
+    tf.reset_default_graph()
     parent_dir, _ = os.path.split(os.getcwd())
     emb_path = os.path.join(parent_dir, 'data', '50_embed.pickle')
     w2n_path = os.path.join(parent_dir, 'data', 'w2n_n2w.pickle')
@@ -394,7 +365,7 @@ if __name__ == '__main__':
     print('Done!')
     train_data,_ = comNN.load_data()
     #print(train_data)
-    batches, batch_lens = batches_pads(train_data, config.batch_size, mode=0)
+    batches, batch_lens = batches_pads(train_data, config.batch_size)
     print(train_data[0])
     print(train_data[1])
     print(batches[0])
