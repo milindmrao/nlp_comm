@@ -40,13 +40,16 @@ class Config(object):
                  train_path,
                  val_path,
                  model_path,
+                 training = True,
                  constant_embeddings=True):
         self.embed_path = embed_path
         self.w2n_path = w2n_path
         self.train_path = train_path
         self.val_path = val_path
         self.model_path = model_path
+        self.training = training
         self.constant_embeddings = constant_embeddings
+
         # self.chan_params = {'type': 'erasure', 'prob_erasure': 0.1}
 
 class Encoder(object):
@@ -243,6 +246,7 @@ class Decoder(object):
         self.dec_input = dec_input
         self.dec_output = None
         self.feature_size = config.feature_size
+        self.training = config.training
         #self.dec_output = self.gen_decoder_nn(dec_input)
 
     def gen_decoder_nn(self):
@@ -278,8 +282,8 @@ def test_decoder():
     input_len = np.random.randint(int(len_max_inp/2),len_max_inp,configs.batch_size)
     encoder = EncoderStackedBiLSTM(enc_input,input_len,configs)
     dec_inp = encoder.generate_encoder_nn()
-    decoder = DecoderMultiLSTM(dec_inp,enc_input,input_len,len_max_inp,configs)
-    dec_out = decoder.gen_decoder_nn(embeddings)
+    decoder = DecoderMultiLSTM(dec_inp,embeddings, enc_input,input_len,len_max_inp,configs)
+    dec_out = decoder.gen_decoder_nn()
     
     with tf.Session() as sess:
         sess.run(tf.global_variables_initializer())
@@ -290,12 +294,13 @@ def test_decoder():
     return dec_outr
     
 class DecoderMultiLSTM(Decoder):
-    def __init__(self, dec_input, corrSentense,sentence_len, batch_max_len, config):
+    def __init__(self, dec_input, embeddings, corrSentense,sentence_len, batch_max_len, config):
         super(DecoderMultiLSTM, self).__init__(dec_input, batch_max_len,config)
         self.corrctSentense =  corrSentense
         self.sentence_len = sentence_len
+        self.embeddings = embeddings
 
-    def gen_decoder_nn(self,embeddings):
+    def gen_decoder_nn(self):
         denseOut = tfk.layers.Dense(self.rcv_bit_to_num,
                                     activation="tanh", name="Dec_Dense_BitToNum")(self.dec_input)
                
@@ -308,9 +313,23 @@ class DecoderMultiLSTM(Decoder):
                                             for cell_size in self.LSTM_size])
             init_state = tf.split(denseOut, num_or_size_splits=self.numb_layers_dec, axis=1)
             init_state = tuple([tf.contrib.rnn.LSTMStateTuple(*tf.split(x,num_or_size_splits=2,axis=1)) for x in init_state])
+
+        if self.training:
+            sample_prob = tf.constant(0, dtype=tf.float32, name='sample_prob')
+        else:
+            sample_prob = tf.constant(1, dtype=tf.float32, name='sample_prob')
+
+        helper = tf.contrib.seq2seq.ScheduledEmbeddingTrainingHelper(   inputs=self.corrctSentense,
+                                                                        sequence_length=self.sentence_len,
+                                                                        embedding=self.embeddings,
+                                                                        sampling_probability=sample_prob,
+                                                                        time_major=False,
+                                                                        seed=None,
+                                                                        scheduling_seed=None,
+                                                                        name=None)
         
-        helper = tf.contrib.seq2seq.TrainingHelper(inputs=self.corrctSentense,
-                                                   sequence_length=self.sentence_len)
+        # helper = tf.contrib.seq2seq.TrainingHelper(inputs=self.corrctSentense,
+        #                                            sequence_length=self.sentence_len)
         
         decoder = tf.contrib.seq2seq.BasicDecoder(helper=helper,
                                                   initial_state=init_state,
@@ -323,7 +342,7 @@ class DecoderMultiLSTM(Decoder):
         shape_decoder_inter_output = tf.shape(decoder_inter_output)
         self.dec_output = tf.reshape(
                         tf.matmul(tf.reshape(decoder_inter_output,[-1,self.feature_size])
-                                    ,embeddings,transpose_b=True),
+                                    ,self.embeddings,transpose_b=True),
                         [shape_decoder_inter_output[0],shape_decoder_inter_output[1],-1])
         return self.dec_output
 
