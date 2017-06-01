@@ -20,23 +20,49 @@ class LSTMCellDecoder(tf.contrib.rnn.LSTMCell):
                  activation=tf.tanh,
                  reuse=None,
                  feature_size=None,
-                 embedding=None):
+                 embeddings=None):
         """ Main thing is to pass the embeddings and the feature size"""
+        xavier_initializer = tf.contrib.layers.xavier_initializer()
         super(LSTMCellDecoder, self).__init__(num_units, input_size, use_peepholes,
-                                              cell_clip, initializer, num_proj, proj_clip, num_unit_shards,
+                                              cell_clip, initializer or xavier_initializer,
+                                              num_proj, proj_clip, num_unit_shards,
                                               num_proj_shards,
                                               forget_bias, state_is_tuple, activation, reuse)
-        self.embedding = embedding
+        self.embeddings = embeddings
         self.feature_size = feature_size
+        self.Aout = tf.get_variable('lstm_dec_A',shape=[num_units,self.feature_size],
+                                    dtype=tf.float32,initializer=xavier_initializer)
+        self.bout = tf.get_variable('lstm_dec_b',shape=[self.feature_size],dtype=tf.float32,
+                                    initializer=xavier_initializer)
 
     def __call__(self, inputs,
                  state,
                  scope=None):
         outputs, state = super(LSTMCellDecoder, self).__call__(inputs, state, scope)
-        outputs = tfk.layers.Dense(self.feature_size)(outputs)
-        outputs = tf.matmul(outputs, self.embedding, transpose_b=True)
+        outputs = tf.matmul(outputs,self.Aout)+self.bout
+        outputs = tf.matmul(outputs, self.embeddings, transpose_b=True)
         return (outputs, state)
-
+    
+class MultiRNNCellDecoder(tf.contrib.rnn.MultiRNNCell):
+    """ Extends the RNN cell to work with output layers"""
+    
+    def __init__(self,cells,state_is_tuple=True,feature_size=None,embeddings=None):
+        xavier_initializer = tf.contrib.layers.xavier_initializer()
+        super(MultiRNNCellDecoder,self).__init__(cells,state_is_tuple)
+        self.embeddings = embeddings
+        self.feature_size = feature_size
+        self.Aout = tf.get_variable('multirnn_dec_A',shape=[cells[-1].output_size,self.feature_size],
+                                    dtype=tf.float32,initializer=xavier_initializer)
+        self.bout = tf.get_variable('multirnn_dec_b',shape=[self.feature_size],dtype=tf.float32,
+                                    initializer=xavier_initializer) 
+    def __call__(self, inputs,
+                 state,
+                 scope=None):
+        outputs, state = super(MultiRNNCellDecoder, self).__call__(inputs, state, scope)
+        outputs = tf.matmul(outputs,self.Aout)+self.bout
+        outputs = tf.matmul(outputs, self.embeddings, transpose_b=True)
+        return (outputs, state)
+		
 class Config(object):
     feature_size = 50
     hidden_size = 100
