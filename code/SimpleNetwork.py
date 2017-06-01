@@ -74,13 +74,12 @@ class EncChanDecNN(object):
         encoder = EncoderStackedBiLSTM(self.sentence_embeds, self.sentence_len_placeholder, self.config)
         encoder.generate_encoder_nn()
         print(encoder.encoder_output)
-
         channel = Channel(encoder.encoder_output, self.config)
 
         print(channel.chan_output)
-        decoder = DecoderMultiLSTM(channel.chan_output,self.sentence_embeds,self.sentence_len_placeholder,
+        decoder = DecoderMultiLSTM(channel.chan_output,self.embeddings,self.sentence_embeds,self.sentence_len_placeholder,
                                    self.batch_max_len, self.config)
-        decoder.gen_decoder_nn(self.embeddings)
+        decoder.gen_decoder_nn()
         print(decoder.dec_output)
         return (encoder, channel, decoder)
 
@@ -351,6 +350,7 @@ def test_input():
 if __name__ == '__main__':
     tf.reset_default_graph()
     parent_dir, _ = os.path.split(os.getcwd())
+    parent_dir, _ = os.path.split(parent_dir)
     emb_path = os.path.join(parent_dir, 'data', '50_embed.pickle')
     w2n_path = os.path.join(parent_dir, 'data', 'w2n_n2w.pickle')
     train_data_path = os.path.join(parent_dir, 'data', 'training_rest_reuters.pickle')
