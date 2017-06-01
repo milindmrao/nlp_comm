@@ -291,7 +291,8 @@ def dataset_to_token(file_path, word2num):
 
 
 def batches_pads(sentences_inp, batch_size=32, params={}):
-    """ Creates batches.
+    """ Creates batches for input and output. For the input, it's simply word_tokens followed by padding. 
+    For the output, it's <start> word_tokens <end> padding. The longest sentence is also padded 
     Inputs:
         sentences_inp - list of lists
         batch_size - size of each batch
@@ -299,10 +300,11 @@ def batches_pads(sentences_inp, batch_size=32, params={}):
             'shuffle' (bool): Shuffle the input or not. Default False
             'bucket' (bool): Group by same bucket size. Default False
             'bucket_sizes' (list-of-increasing-int): Bucket boundaries. Default 4:5:40.
+            'extra_out_pad' (int): Extra padding for the output. Default 5. 
             
         mode - 0: do nothing, 1: shuffle entries, 2: group sentences of the same size
     Returns:
-        list of ([sentence_batch],[sentence_len_batch])
+        list of [(sentence_batch_inp,sentence_batch_out,sentence_len_batch_inp,sentence_len_batch_out)],len_batches
 
     Note:
         <pad> is PAD_ID
@@ -310,6 +312,7 @@ def batches_pads(sentences_inp, batch_size=32, params={}):
     padded_batches = []
     sentences = sentences_inp.copy()
     len_batches = []
+    extra_out_pad = params.get('extra_out_pad',5)
     if params.get('shuffle',False):
         # Shuffle indices so that each batch is different
         np.random.shuffle(sentences)
@@ -323,10 +326,12 @@ def batches_pads(sentences_inp, batch_size=32, params={}):
         # Homebrewed method without bucketing
         for ind in range(0, int(len(sentences) / batch_size) * batch_size, batch_size):
             batch = sentences[ind:ind + batch_size]
-            sen_len_batch = [len(x) for x in batch]
-            max_len_batch = max(sen_len_batch)
-            pad_batch = [x + [PAD_ID] * (max_len_batch - len(x)) for x in batch]
-            padded_batches += [(pad_batch, sen_len_batch)]
+            sen_len_batch_inp = [len(x) for x in batch]
+            max_len_batch = max(sen_len_batch_inp)
+            pad_batch_inp = [x + [PAD_ID] * (max_len_batch - len(x)) for x in batch]
+            pad_batch_out = [[START_ID]+x+[END_ID]+[PAD_ID]*(max_len_batch - len(x)+extra_out_pad) for x in batch]
+            sen_len_batch_out = [x+2 for x in sen_len_batch_inp]
+            padded_batches += [(pad_batch_inp, sen_len_batch_inp,pad_batch_out,sen_len_batch_out)]
             len_batches += [max_len_batch]
     return padded_batches, len_batches
 
@@ -343,8 +348,8 @@ def test_input():
     sentences = dataset_to_token(input_file_path, w2n)
 
     # Returning batches
-    batches = batches_pads(sentences, 10, 0)
-    return batches
+    batches,lens = batches_pads(sentences, 10)
+    return (batches,lens)
 
 
 if __name__ == '__main__':
