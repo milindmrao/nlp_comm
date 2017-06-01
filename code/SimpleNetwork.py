@@ -95,6 +95,19 @@ class EncChanDecNN(object):
 
         return loss
 
+	# def setup_loss(self):
+        # """
+        # Loss function.
+        # """
+        # with tf.name_scope("CrossEntLoss"):
+            # loss = tf.reduce_mean(tf.nn.weighted_moments(
+                # tf.nn.sparse_softmax_cross_entropy_with_logits(
+                    # logits=self.decoder.dec_output, labels=self.sentence_placeholder),
+                        # -1,tf.sequence_mask(self.sentence_len_placeholder,self.batch_max_len))) #Need to add masks
+            # tf.summary.scalar("CrossEntLoss", loss)
+
+        # return loss 
+		
     def setup_optimizer(self):
         # self.train_op = tf.train.AdamOptimizer(self.config.lr).minimize(
         #     self.loss)
@@ -351,6 +364,39 @@ def test_input():
     batches,lens = batches_pads(sentences, 10)
     return (batches,lens)
 
+def setup_loss(logits,labels,lengths,max_sentence_length):
+    """
+    Loss function.
+    """
+    with tf.name_scope("CrossEntLoss"):
+        loss = tf.reduce_mean(tf.nn.weighted_moments(
+            tf.nn.sparse_softmax_cross_entropy_with_logits(
+                logits=logits, labels=labels),
+                    -1,tf.sequence_mask(lengths,max_sentence_length))) #Need to add masks
+    return loss   
+
+	
+def test_setup_loss():
+    batch_size = 32
+    sentences_length = 50
+    vocab_size = 200
+    sen_lens = np.random.randint(5,sentences_length,[batch_size])
+    labs = [np.random.randint(0,vocab_size,x) for x in sen_lens]
+    labels = np.array([np.concatenate([x,np.zeros(sentences_length-len(x),dtype=int)],axis=0) for x in labs])
+    labels_diff = np.array([np.concatenate([x,np.ones(sentences_length-len(x),dtype=int)],axis=0) for x in labs])
+    logits_random = np.random.randn(*[batch_size,sentences_length,vocab_size])
+    I_vocab = np.eye(vocab_size)*100
+    logits_exact = np.array(list(map(lambda x: I_vocab[x,:],labels)))
+    print(np.shape(logits_random),np.shape(labels))
+    tf.reset_default_graph()
+    loss_random = setup_loss(logits_random,labels,sen_lens,sentences_length)
+    loss_random2 = setup_loss(logits_random,labels_diff,sen_lens,sentences_length)
+    loss_exact = setup_loss(logits_exact,labels,sen_lens,sentences_length)
+    with tf.Session() as sess:
+        sess.run(tf.global_variables_initializer())
+        losses = sess.run([loss_random,loss_random2,loss_exact])
+    print(losses)
+    return losses
 
 if __name__ == '__main__':
     tf.reset_default_graph()
