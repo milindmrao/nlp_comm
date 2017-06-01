@@ -1,6 +1,41 @@
 import tensorflow.contrib.keras as tfk
 import tensorflow as tf
 import numpy as np
+from preprocess import UNK_ID,PAD_ID,START_ID,END_ID
+
+class LSTMCellDecoder(tf.contrib.rnn.LSTMCell):
+    """ Extends the LSTM Cell with an output layer"""
+
+    def __init__(self, num_units,
+                 input_size=None,
+                 use_peepholes=False,
+                 cell_clip=None,
+                 initializer=None,
+                 num_proj=None,
+                 proj_clip=None,
+                 num_unit_shards=None,
+                 num_proj_shards=None,
+                 forget_bias=1.0,
+                 state_is_tuple=True,
+                 activation=tf.tanh,
+                 reuse=None,
+                 feature_size=None,
+                 embedding=None):
+        """ Main thing is to pass the embeddings and the feature size"""
+        super(LSTMCellDecoder, self).__init__(num_units, input_size, use_peepholes,
+                                              cell_clip, initializer, num_proj, proj_clip, num_unit_shards,
+                                              num_proj_shards,
+                                              forget_bias, state_is_tuple, activation, reuse)
+        self.embedding = embedding
+        self.feature_size = feature_size
+
+    def __call__(self, inputs,
+                 state,
+                 scope=None):
+        outputs, state = super(LSTMCellDecoder, self).__call__(inputs, state, scope)
+        outputs = tfk.layers.Dense(self.feature_size)(outputs)
+        outputs = tf.matmul(outputs, self.embedding, transpose_b=True)
+        return (outputs, state)
 
 class Config(object):
     feature_size = 50
@@ -297,27 +332,51 @@ class DecoderMultiLSTM(Decoder):
     def __init__(self, dec_input, embeddings, corrSentense,sentence_len, batch_max_len, config):
         super(DecoderMultiLSTM, self).__init__(dec_input, batch_max_len,config)
         self.corrctSentense =  corrSentense
-        self.sentence_len = sentence_len
+        self.sentence_len = sentence_len + 7 # 5 extra pads and 1 start and 1 end of sentence
         self.embeddings = embeddings
+        eos_time_slice = tf.constant(END_ID, dtype=tf.int32,shape=[config.batch_size],name='EOS')
+        sos_time_slice = tf.constant(START_ID, dtype=tf.int32,shape=[config.batch_size],name='SOS')
+        pad_time_slice = tf.constant(PAD_ID, dtype=tf.int32, shape=[config.batch_size], name='PAD')
+
+        eos_step_embedded = tf.nn.embedding_lookup(embeddings, eos_time_slice)
+        eos_step_embedded = tf.reshape(eos_step_embedded,shape=[config.batch_size,1,-1])
+        sos_step_embedded = tf.nn.embedding_lookup(embeddings, sos_time_slice)
+        sos_step_embedded = tf.reshape(sos_step_embedded, shape=[config.batch_size, 1, -1])
+        pad_step_embedded = tf.nn.embedding_lookup(embeddings, pad_time_slice)
+        pad_step_embedded = tf.reshape(pad_step_embedded, shape=[config.batch_size, 1, -1])
+
+        print(corrSentense)
+        print(sos_step_embedded)
+
+        sos_added = tf.concat([sos_step_embedded,corrSentense],axis=1)
+        
 
     def gen_decoder_nn(self):
         denseOut = tfk.layers.Dense(self.rcv_bit_to_num,
                                     activation="tanh", name="Dec_Dense_BitToNum")(self.dec_input)
                
         if self.numb_layers_dec==1:
-            cell = tf.contrib.rnn.LSTMCell(num_units=self.LSTM_size[0], state_is_tuple=True)
+            cell = LSTMCellDecoder(num_units = self.LSTM_size[0], state_is_tuple = True,
+                                    feature_size = self.feature_size, embedding = self.embeddings)
             init_state = tf.contrib.rnn.LSTMStateTuple(*tf.split(denseOut,num_or_size_splits=2,axis=1))
         if self.numb_layers_dec>1:
-            cell = tf.contrib.rnn.MultiRNNCell([tf.contrib.rnn.LSTMCell(
-                                            num_units=cell_size, state_is_tuple=True)
-                                            for cell_size in self.LSTM_size])
+            bottom_cells = [tf.contrib.rnn.LSTMCell(num_units=self.LSTM_size[i], state_is_tuple=True)
+                                            for i in range(self.numb_layers_dec)]
+            #print(bottom_cells)
+            #top_cell = LSTMCellDecoder(num_units = self.LSTM_size[self.numb_layers_dec-1], state_is_tuple = True,
+            #                             feature_size = self.feature_size, embedding = self.embeddings)
+
+            cell = tf.contrib.rnn.MultiRNNCell(bottom_cells)
             init_state = tf.split(denseOut, num_or_size_splits=self.numb_layers_dec, axis=1)
             init_state = tuple([tf.contrib.rnn.LSTMStateTuple(*tf.split(x,num_or_size_splits=2,axis=1)) for x in init_state])
+
 
         if self.training:
             sample_prob = tf.constant(0, dtype=tf.float32, name='sample_prob')
         else:
             sample_prob = tf.constant(1, dtype=tf.float32, name='sample_prob')
+
+
 
         helper = tf.contrib.seq2seq.ScheduledEmbeddingTrainingHelper(   inputs=self.corrctSentense,
                                                                         sequence_length=self.sentence_len,
@@ -327,10 +386,9 @@ class DecoderMultiLSTM(Decoder):
                                                                         seed=None,
                                                                         scheduling_seed=None,
                                                                         name=None)
-        
-        # helper = tf.contrib.seq2seq.TrainingHelper(inputs=self.corrctSentense,
-        #                                            sequence_length=self.sentence_len)
-        
+
+
+
         decoder = tf.contrib.seq2seq.BasicDecoder(helper=helper,
                                                   initial_state=init_state,
                                                   cell=cell,
