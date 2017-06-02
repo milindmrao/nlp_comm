@@ -87,6 +87,7 @@ def word_to_vec(length=50000, dim=50):
     words = []
     embedding = [list(np.random.randn(dim)) for x in range(len(words_special))]
     embedding[0] = list(np.zeros(dim))
+    #with open(os.path.join(parent_dir, 'data', 'glove.6b.' + str(dim) + 'd.txt'), 'r', encoding="utf8") as fop:
     with open(os.path.join(parent_dir, 'data', 'glove.6b.' + str(dim) + 'd.txt'), 'r', encoding="utf8") as fop:
         for ind in tqdm(range(length)):
             #            try:
@@ -98,9 +99,11 @@ def word_to_vec(length=50000, dim=50):
             #                print(words[-20:],embedding[-2:])
             #                return
             line = fop.readline().split()
+            #print(line)
             words += [line[0]]
             embedding += [list(map(float, line[1:]))]
     word2num = dict(words_special + list(zip(words, range(len(words_special), len(words) + len(words_special)))))
+    print(word2num)
     num2word = dict([(n, w) for w, n in word2num.items()])
     embedding = np.array(embedding)
     with open(os.path.join(parent_dir, 'data', str(dim) + '_embed_large.pickle'), 'wb') as fop:

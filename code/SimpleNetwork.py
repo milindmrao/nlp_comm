@@ -193,6 +193,39 @@ class EncChanDecNN(object):
         val_data = dataset_to_token(self.config.val_path, self.w2n)
         return (train_data, val_data)
 
+    def test_network_performance(self, sess):
+        """
+        This function tests the network performance using validation data
+        :return: train_data: the data used for training
+                 valid_data: the data used for validation
+        """
+        val_data = dataset_to_token(self.config.val_path, self.w2n)
+        batches, batch_lens = batches_pads(val_data, self.config.batch_size,
+                                           self.config.batch_reader_param)
+        for i, batch in enumerate(batches):
+            if i<20:
+                feed_dict = self._create_feed_dict(batch, batch_lens[i], lr=0.0001)
+                net_out = self.EncTxDec(sess,feed_dict)
+                #print(batch[0][0])
+                #print(net_out[0])
+                input_words = list(map(lambda x: self.n2w[x], batch[0][0]))
+                input_sentence = ' '.join(input_words)
+                outputs_words = list(map(lambda x: self.n2w[x], net_out[0]))
+                outputs_sentence = ' '.join(outputs_words)
+                print('============================')
+                print(input_sentence)
+                print(outputs_sentence)
+                print('============================')
+
+
+        return None
+
+    def EncTxDec(self,sess,input_feed):
+        outputs = sess.run(self.decoder.dec_output, input_feed)
+        #print(outputs)
+        outputs_nums = np.argmax(outputs, axis=2)
+        return outputs_nums.tolist()
+
     def decode(self, session, sentence):
         """
         Evaluates a single sentence - can input text and it outputs text
@@ -230,7 +263,7 @@ class EncChanDecNN(object):
         if ckpt and (tf.gfile.Exists(norm_ckpt_path) or
                          tf.gfile.Exists(v2_path)):
             print("Reading model parameters from %s" % norm_ckpt_path)
-            comNN.saver.restore(sess, norm_ckpt_path)
+            self.saver.restore(sess, norm_ckpt_path)
         else:
             print('Error reading weights')
 
@@ -386,7 +419,7 @@ def test_input():
 if __name__ == '__main__':
     tf.reset_default_graph()
     parent_dir, _ = os.path.split(os.getcwd())
-    # parent_dir, _ = os.path.split(parent_dir)
+    parent_dir, _ = os.path.split(parent_dir)
     emb_path = os.path.join(parent_dir, 'data', '50_embed_large.pickle')
     w2n_path = os.path.join(parent_dir, 'data', 'w2n_n2w.pickle')
     # train_data_path = os.path.join(parent_dir, 'data', 'training_euro.pickle')
@@ -396,8 +429,10 @@ if __name__ == '__main__':
     trained_model_path = os.path.join(parent_dir, 'trained_models', curr_time + 'model.weights')
     summ_path = os.path.join(parent_dir, 'tensorboard', '6')
 
+    Pretrained_model_path = os.path.join(parent_dir, 'trained_models', '1496366210.406971model.weights')
+
     print('Building network...')
-    config = Config(emb_path, w2n_path, train_data_path, valid_data_path, trained_model_path)
+    config = Config(emb_path, w2n_path, train_data_path, valid_data_path, trained_model_path,constant_embeddings=True)
     comNN = EncChanDecNN(config)
     print('Done!')
 
@@ -424,5 +459,6 @@ if __name__ == '__main__':
 
         writer = tf.summary.FileWriter(summ_path)
         writer.add_graph(sess.graph)
+        comNN.load_trained_model(sess, trained_model_path)
         comNN.train(sess, writer)
     print('Finished training!')

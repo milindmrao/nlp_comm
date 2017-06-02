@@ -396,6 +396,8 @@ class DecoderMultiLSTM(Decoder):
                                    units=self.rcv_bit_to_num,
                                    activation=tf.nn.tanh)
 
+
+
         if self.numb_layers_dec == 1:
             cell = LSTMCellDecoder(num_units=self.LSTM_size[0], state_is_tuple=True,
                                    feature_size=self.feature_size, embeddings=self.embeddings)
@@ -413,7 +415,7 @@ class DecoderMultiLSTM(Decoder):
                 [tf.contrib.rnn.LSTMStateTuple(*tf.split(x, num_or_size_splits=2, axis=1)) for x in init_state])
 
         if self.training:
-            sample_prob = tf.constant(0, dtype=tf.float32, name='sample_prob')
+            sample_prob = tf.constant(0.5, dtype=tf.float32, name='sample_prob')
         else:
             sample_prob = tf.constant(1, dtype=tf.float32, name='sample_prob')
 
