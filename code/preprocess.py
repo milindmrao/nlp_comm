@@ -112,7 +112,31 @@ def word_to_vec(length=50000, dim=50):
     with open(os.path.join(parent_dir, 'data', 'w2n_n2w.pickle'), 'wb') as fop:
         pickle.dump([word2num, num2word], fop)
 
+def word_to_vec_sane(length=50000, dim=200):
+    """Aim of this is to create the vocabulary and the embeddings"""
+    parent_dir, _ = os.path.split(os.getcwd())
+    words_special = [('<pad>', PAD_ID), ('<start>', START_ID), ('<end>', END_ID), ('<unk>', UNK_ID)]
 
+    words = []
+    embedding = [list(np.random.randn(dim)) for x in range(len(words_special))]
+    embedding[0] = list(np.zeros(dim))
+    #with open(os.path.join(parent_dir, 'data', 'glove.6b.' + str(dim) + 'd.txt'), 'r', encoding="utf8") as fop:
+    with open(os.path.join(parent_dir, 'data', 'glove.6b.' + str(dim) + 'd.txt'), 'r', encoding="utf8") as fop:
+        for ind in tqdm(range(length)):
+            line = fop.readline().split()
+            if(line[0].isalpha()):
+                words += [line[0]]
+                embedding += [list(map(float, line[1:]))]
+    word2num = dict(words_special + list(zip(words, range(len(words_special), len(words) + len(words_special)))))
+    print(len(word2num))
+    num2word = dict([(n, w) for w, n in word2num.items()])
+    embedding = np.array(embedding)
+    with open(os.path.join(parent_dir, 'data', str(dim) + '_embed_rest.pickle'), 'wb') as fop:
+        pickle.dump(embedding, fop)
+
+    with open(os.path.join(parent_dir, 'data', 'w2n_n2w_rest.pickle'), 'wb') as fop:
+        pickle.dump([word2num, num2word], fop)
+		
 def test_w2n():
     parent_dir, _ = os.path.split(os.getcwd())
     with open(os.path.join(parent_dir, 'data', 'w2n_n2w.pickle'), 'rb') as fop:
