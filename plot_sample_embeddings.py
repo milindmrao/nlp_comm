@@ -62,7 +62,9 @@ if __name__ == '__main__':
     
     plt.figure(1)
     markers = ['o']*4+['v']*4+['s']*4
-    for x_c,y_c,mark,test_sentence in zip(coordinates[:,0],coordinates[:,1],markers,test_sentences):
-        plt.scatter(x_c,y_c,marker=mark)
+    colors = ['k']*4+['r']*4+['g']*4
+    for x_c,y_c,mark,col,test_sentence in zip(coordinates[:,0],coordinates[:,1],markers,colors,test_sentences):
+        plt.scatter(x_c,y_c,c=col,marker=mark)
         plt.annotate(xy=(x_c,y_c),s=test_sentence)
+    plt.xlim([-20,40])
     plt.savefig(os.path.join(parent_dir,'results','example_embedding.eps'))
