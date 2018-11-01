@@ -50,6 +50,8 @@ class process_giga(object):
             return False
         # Checking overlap. Rejecting if half the non-stop words in summary not in line
         summ_nonstop = [x for x in summ_words if x not in self._common_words]
+        if len(summ_nonstop) == 0:
+              return False
         summ_nonstop_sent = [x for x in summ_nonstop if x in sent]
         if len(summ_nonstop_sent)/len(summ_nonstop)<0.5:
             return False
@@ -104,7 +106,12 @@ class process_giga(object):
 
 #input_folder = ['E:\\nlp_comm\\code\\data\\giga\\giga_test\\']
 input_folder = ['/home/milind/data/gigawords/disc1/gigaword_eng_5_d1/data/afp_eng',
-                '/home/milind/data/gigawords/disc1/gigaword_eng_5_d1/data/apw_eng']
+                '/home/milind/data/gigawords/disc1/gigaword_eng_5_d1/data/apw_eng',
+				'/home/milind/data/gigawords/disc3/gigaword_eng_5_d3/data/xin_eng',
+				'/home/milind/data/gigawords/disc2/gigaword_eng_5_d2/data/cna_eng',
+				'/home/milind/data/gigawords/disc2/gigaword_eng_5_d2/data/ltw_eng',
+				'/home/milind/data/gigawords/disc2/gigaword_eng_5_d2/data/nyt_eng',
+				'/home/milind/data/gigawords/disc2/gigaword_eng_5_d2/data/wpb_eng']
 pg = process_giga()
 path_train = '../data/giga/giga_train.dat'
 path_test = '../data/giga/giga_test.dat'

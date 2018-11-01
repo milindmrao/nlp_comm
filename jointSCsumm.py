@@ -134,13 +134,15 @@ class Embedding(object):
         self.vocab_size = config.vocab_size
         self.embedding_size = config.embedding_size
         if config.embed_path == None:
-            self.embeddings = tf.Variable(tf.random_uniform([self.vocab_size, self.embedding_size], -1.0, 1.0),
-                                                            dtype=tf.float32,
-                                                            name='embed')
+            self.embeddings = tf.Variable(
+                    tf.random_uniform([self.vocab_size, self.embedding_size],
+                                      -1.0, 1.0),
+                                      dtype=tf.float32,
+                                      name='embed')
         else:
             with open(config.embed_path, 'rb') as fop:
                 embeddings = pickle.load(fop)
-                self.embeddings = tf.Variable(embeddings, 
+                self.embeddings = tf.Variable(embeddings[:self.vocab_size], 
                                               dtype=tf.float32,
                                               name='embed')
         self.curr_embeds = None
@@ -223,7 +225,8 @@ class VSEncoder(object):
         """Binarizer function used at training
         """
         prob = tf.truediv(tf.add(1.0, input_layer), 2.0)
-        bernoulli = tf.contrib.distributions.Bernoulli(probs=prob, dtype=tf.float32)
+        bernoulli = tf.contrib.distributions.Bernoulli(probs=prob, 
+                                                       dtype=tf.float32)
         return 2 * bernoulli.sample() - 1
 
     def test_binarizer(self, input_layer):
@@ -237,9 +240,12 @@ class VSEncoder(object):
         """This part of the code binarizes the reduced states. The last line ensure the
         backpropagation gradients pass through the binarizer unchanged
         """
-        compare_callable = {tf.equal(self.binarization_id,0):partial(self.training_binarizer, input_layer),
-                            tf.equal(self.binarization_id,1):partial(self.test_binarizer, input_layer),
-                            tf.equal(self.binarization_id,2):(lambda : input_layer)}
+        compare_callable = {tf.equal(self.binarization_id,0):
+                                partial(self.training_binarizer, input_layer),
+                            tf.equal(self.binarization_id,1):
+                                partial(self.test_binarizer, input_layer),
+                            tf.equal(self.binarization_id,2):
+                                (lambda : input_layer)}
         binarized = tf.case(compare_callable,
                             default=(lambda : input_layer),
                             exclusive=True,
@@ -250,7 +256,6 @@ class VSEncoder(object):
     def scale_down(self,input_layer,output_dim, name='',**kwargs):
         enc_scal_down = tf.layers.Dense(output_dim,
                                         activation=tf.tanh,
-                                        kernel_initializer=tf.glorot_uniform_initializer(),
                                         name='enc_scal'+name)
         scaled_down_pre = enc_scal_down(input_layer)
         scaled_down_bin = self.binarize(scaled_down_pre)
@@ -260,7 +265,6 @@ class VSEncoder(object):
         for de_layers in self.config.deep_encoding_params:
             enc_state = tf.layers.dense(enc_state_concat,de_layers,
                                         activation=tf.nn.relu,
-                                        kernel_initializer=tf.glorot_uniform_initializer(),
                                         name='enc_deep')
             enc_state_concat = enc_state
         return enc_state
@@ -443,7 +447,6 @@ class VSDecoder(object):
         for ind in ['c','h']:
             dec_scal_up = tf.layers.Dense(output_dim,
                                           activation=tf.nn.relu,
-                                          kernel_initializer=tf.glorot_uniform_initializer(),
                                           name='dec_scal'+ind+name)
             dec_states.append(dec_scal_up(input_layer))
         return dec_states
@@ -453,7 +456,6 @@ class VSDecoder(object):
             dec_inp = tf.layers.dense(dec_state_chan,
                                       de_layers,
                                       activation = tf.nn.relu,
-                                      kernel_initializer = tf.glorot_uniform_initializer(),
                                       name='dec_deep')
             dec_state_chan = dec_inp
         return dec_inp
@@ -496,14 +498,14 @@ class VSDecoder(object):
         return tuple(init_state)
 
     def build_cells(self):
+        self.out_proj = tf.layers.Dense(self.vocab_out, 
+                    kernel_initializer=tf.initializers.random_uniform(-1,1),
+                    name='output_proj')
         cells = [tf.contrib.rnn.LSTMCell(num_units=self.dec_hidden_units,
                                          use_peepholes=self.peephole)
                 for _ in range(self.numb_dec_layers)]
-        self.decLSTM = tf.contrib.rnn.OutputProjectionWrapper(
-                    tf.contrib.rnn.MultiRNNCell(cells),
-                    output_size=self.vocab_out,
-                    activation = None )#tf.nn.relu)
-        
+        self.decLSTM = tf.contrib.rnn.MultiRNNCell(cells)
+                    
     def build_dec_network(self):
         training_helper = tf.contrib.seq2seq.ScheduledEmbeddingTrainingHelper(
                             self.embeddings.get_embeddings(self.dec_inputs),
@@ -511,15 +513,16 @@ class VSDecoder(object):
                             self.embeddings.embeddings,
                             sampling_probability=1.0-self.prob_corr_input)
         decoder = tf.contrib.seq2seq.BasicDecoder(self.decLSTM,
-                                                  helper=training_helper,
-                                                  initial_state=self.init_state)
+                                              helper=training_helper,
+                                              initial_state=self.init_state,
+                                              output_layer=self.out_proj)
         dec_logits_, _,_ = tf.contrib.seq2seq.dynamic_decode(
                             decoder,
                             maximum_iterations = tf.shape(self.dec_targets)[1],
                             scope = 'dec_lstm')
         dec_logits = dec_logits_.rnn_output
-        dec_outputs = tf.argmax(dec_logits, 2)
-        return (dec_logits, tf.cast(dec_outputs,tf.int32))
+        dec_outputs = tf.cast(tf.argmax(dec_logits, 2), tf.int32)
+        return (dec_logits, dec_outputs)
     
     def build_beam_network(self):
         self.beam_size = self.config.beam_size
@@ -530,10 +533,11 @@ class VSDecoder(object):
                                             self.dec_inputs[:,0],
                                             self.config.EOS,
                                             bd_initial_state,
-                                            self.beam_size)
+                                            self.beam_size,
+                                            output_layer=self.out_proj)
         bdec_preds,_,_ = tf.contrib.seq2seq.dynamic_decode(bdec,
-                                                    maximum_iterations = tf.shape(self.dec_inputs)[1],
-                                                    scope='dec_lstm')
+                            maximum_iterations = tf.shape(self.dec_inputs)[1],
+                            scope='dec_lstm')
         bdec_preds = bdec_preds.predicted_ids
         return (tf.cast(bdec_preds[:,:,-1],tf.int32),bdec_preds[:,:,:-1])       
 
@@ -683,7 +687,8 @@ class VSSystem(object):
             labels=tf.one_hot(self.dec_targets, depth=self.config.vocab_out, dtype=tf.float32),
             logits=self.decoder.dec_logits,)
         # loss function
-        loss = tf.reduce_sum(stepwise_cross_entropy*seq_mask)/tf.reduce_sum(seq_mask)
+#        loss = tf.reduce_sum(stepwise_cross_entropy*seq_mask)/tf.reduce_sum(seq_mask)
+        loss = tf.reduce_mean(stepwise_cross_entropy)
         # train it
         train_op = tf.train.AdamOptimizer(learning_rate=self.lr).minimize(loss)
         return loss, train_op

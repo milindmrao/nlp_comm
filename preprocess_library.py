@@ -24,7 +24,7 @@ END_ID = 1
 START_ID = 2
 UNK_ID = 3
 
-def word_dict_embed(vocab_size=50000, **kwargs):
+def word_dict_embed(vocab_size=100000, **kwargs):
     """This function creates the word2num, num2word and embeddings objects. It 
     first goes through the corpus to extract word counts. It then uses these and 
     a pretrained embeddings file to 
@@ -44,16 +44,22 @@ def word_dict_embed(vocab_size=50000, **kwargs):
     """
     parent_dir = os.path.split(os.getcwd())[0]
     dim = kwargs.get('dim',200)
-    path_to_eur = os.path.join(parent_dir, 'data', 'euro', 'train_euro.dat')
-    path_corpus = kwargs.get('path_corpus',path_to_eur)
-    path_glove_embed = os.path.join(parent_dir,'data','glove.6b.%dd.txt'%dim)
+    dataset = kwargs.get('dataset','giga')
+    path_to_datacorp = os.path.join(parent_dir, 'data', dataset, 
+                                    '{}_train.dat'.format(dataset))
+    path_corpus = kwargs.get('path_corpus',path_to_datacorp)
+    path_glove_embed = os.path.join(parent_dir,'data',
+                                    'glove.6b.{}d.txt'.format(dim))
     path_embed = kwargs.get('path_embed',path_glove_embed)
     path_w2n_n2w = kwargs.get('path_w2n_n2w',
-                              os.path.join(parent_dir, 'data', 'euro','w2n_n2w_euro.pickle'))
+                              os.path.join(parent_dir, 'data', dataset,
+                                          'w2n_n2w_{}.pickle'.format(dataset)))
     path_word_freq = kwargs.get('path_word_freq', 
-                              os.path.join(parent_dir, 'data', 'euro', 'word_freq_euro.pickle'))
+                              os.path.join(parent_dir, 'data', dataset,
+                                        'word_freq_{}.pickle'.format(dataset)))
     path_word_embed = kwargs.get('path_word_embed',
-                                 os.path.join(parent_dir, 'data', '%d_embed_euro.pickle'%dim))
+                                 os.path.join(parent_dir, 'data', dataset,
+                                     '{}_embed_{}.pickle'.format(dim,dataset)))
     iter_limit = kwargs.get('iter_limit',10000000)
     
     #------- Extracting the most common words from the corpus-----------
@@ -139,8 +145,8 @@ class BatchGenerator (object):
             corp_path: path to the corpus - could be file or folder. 
                 Currently assume each line is a new sentence
             word2numb: word2numb object 
-            mode: 'sen_std' dataset of sentences, returns tokens in sentence
-                  'sen_rawl' dataset of sentences, returns eligible sentence in
+            mode: 'sent_std' dataset of sentences, returns tokens in sentence
+                  'sent_rawl' dataset of sentences, returns eligible sentence in
                       raw form (lower-cased, unk-conversion) with length
                   'summ_std' dataset of sentence, next line summary. Returns 
                       tokens in both
@@ -249,7 +255,7 @@ class BatchGenerator (object):
         """
         logging.info('Reading file {} time'.format(self.curr_epoch))
         self.curr_epoch += 1
-        with open(self.corp_path,'r') as fop:
+        with open(self.corp_path,'r', encoding='utf8') as fop:
             while True:
                 batch = []
                 id_can_serve = self.can_serve(randomize)
@@ -374,7 +380,7 @@ def parse_args(arg_to_parse = None):
     parser.add_argument('--batch_size','-b',default=512,type=int)
     parser.add_argument('--batch_size_test','-bt',default=512,type=int)
     parser.add_argument('--min_len','-mil',default=4,type=int)
-    parser.add_argument('--max_len','-mal',default=40,type=int)
+    parser.add_argument('--max_len','-mal',default=30,type=int)
     parser.add_argument('--diff','-df',default=4,type=int)
     parser.add_argument('--bits_per_bin','-bb',nargs='+',type=int)
     parser.add_argument('--bits_per_bin_gen','-bg',nargs='+',default=['linear',250],
@@ -453,14 +459,17 @@ def parse_args(arg_to_parse = None):
    
 if __name__ == "__main__":
     pass
-    parent_dir = os.path.split(os.getcwd())[0]
-    folder_type = 'giga'
-    path_w2n_n2w = os.path.join(parent_dir, 'data', folder_type,'w2n_n2w_{}.pickle'.format(folder_type))
-    path_corpus = os.path.join(parent_dir, 'data', folder_type, '{}_train.dat'.format(folder_type))
+    w2n_news = Word2Numb('../data/news/w2n_n2w_news.pickle', vocab_size = 40000)
+    b_news = BatchGenerator('../data/news/news_train.dat', w2n_news, mode='sent_std', 
+                            batch_size = 512, epochs = 1, unk_perc = 0.2, vocab_out = 20000)
+#    parent_dir = os.path.split(os.getcwd())[0]
+#    folder_type = 'giga'
+#    path_w2n_n2w = os.path.join(parent_dir, 'data', folder_type,'w2n_n2w_{}.pickle'.format(folder_type))
+#    path_corpus = os.path.join(parent_dir, 'data', folder_type, '{}_train.dat'.format(folder_type))
 #    path_word_embed = os.path.join(parent_dir,'data','wikipedia','200_embed_wiki.pickle')
 #    w2n,n2w,e=word_dict_embed(100000,dim=200,path_corpus=path_corpus,path_w2n_n2w=path_w2n_n2w,path_word_embed=path_word_embed)
 
-    w2numb = Word2Numb(path_w2n_n2w)
-    batch_gen = BatchGenerator(path_corpus,w2numb,diff=4,min_len=5, max_len=50,batch_size=512,mode='summ_std')
-    gen = batch_gen.get_next_batch()
+#    w2numb = Word2Numb(path_w2n_n2w)
+#    batch_gen = BatchGenerator(path_corpus,w2numb,diff=4,min_len=5, max_len=50,batch_size=512,mode='summ_std')
+#    gen = batch_gen.get_next_batch()
     
