@@ -359,7 +359,7 @@ def parse_args(arg_to_parse = None):
     parser.add_argument('--dataset','-d',default='giga',choices=['wiki','news','euro','beta','giga'])
     parser.add_argument('--channel','-c',default='erasure',choices=['erasure','awgn','bsc','none'])
     parser.add_argument('--chan_param','-cp',default=0.95,type=float,help='Keep rate or sig value of channel')
-    parser.add_argument('--numb_epochs','-e',default=5,type=int)
+    parser.add_argument('--numb_epochs','-e',default=10,type=int)
     parser.add_argument('--deep_encoding','-de',action='store_true')
     parser.add_argument('--deep_encoding_params','-dp',nargs='+',type=int,
         default=[1000,800,600], help='dim of additional dense layers after lstm in enc')
@@ -390,6 +390,7 @@ def parse_args(arg_to_parse = None):
     parser.add_argument('--testdata_path','-tep')
     parser.add_argument('--embed_path','-ep')
     parser.add_argument('--model_save_path','-mp')
+    parser.add_argument('--model_save_path_initial','-mpi')
     parser.add_argument('--summ_path','-sp')
     parser.add_argument('--log_path','-lp',help='where the logging is done')
     parser.add_argument('--test_results_path','-terp')
@@ -403,6 +404,7 @@ def parse_args(arg_to_parse = None):
     parser.add_argument('--add_name_results','-anr',default='')
     parser.add_argument('--unk_perc','-up',default=0.2,type=float)
     parser.add_argument('--qcap','-q',default=200,type=int)
+    parser.add_argument('--gradient_clip_norm','-gcn',default=5.0,type=float)
     
     if arg_to_parse is None:
         conf_args = vars(parser.parse_args())

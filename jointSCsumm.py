@@ -71,6 +71,7 @@ class Config(object):
                  max_batch_in_epoch = int(1e9),
                  summary_every = 20,
                  qcap = 200,
+                 gradient_clip_norm=5.0,
                  **kwargs):
         """
         Args:
@@ -125,6 +126,7 @@ class Config(object):
         self.max_validate_counter = max_validate_counter
         
         self.qcap = qcap
+        self.gradient_clip_norm = gradient_clip_norm
         self.kwargs=kwargs
 
 class Embedding(object):
@@ -516,7 +518,7 @@ class VSDecoder(object):
                                               helper=training_helper,
                                               initial_state=self.init_state,
                                               output_layer=self.out_proj)
-        dec_logits_, _,_ = tf.contrib.seq2seq.dynamic_decode(
+        dec_logits_, _,__ = tf.contrib.seq2seq.dynamic_decode(
                             decoder,
                             maximum_iterations = tf.shape(self.dec_targets)[1],
                             scope = 'dec_lstm')
@@ -647,6 +649,7 @@ class VSSystem(object):
         tf.summary.scalar("CrossEntLoss", self.loss)
         tf.summary.scalar('lr',self.lr)
         tf.summary.scalar('help_prob',self.helper_prob)
+        tf.summary.histogram('global norm',self.global_norm)
         tf.summary.histogram("enc_state_c", tf.concat(self.encoder.enc_state_c,axis=-1))
         tf.summary.histogram("enc_state_h", tf.concat(self.encoder.enc_state_h,axis=-1))
         tf.summary.histogram('enc_out',self.encoder.enc_output)
@@ -689,8 +692,14 @@ class VSSystem(object):
         # loss function
 #        loss = tf.reduce_sum(stepwise_cross_entropy*seq_mask)/tf.reduce_sum(seq_mask)
         loss = tf.reduce_mean(stepwise_cross_entropy)
+        
         # train it
-        train_op = tf.train.AdamOptimizer(learning_rate=self.lr).minimize(loss)
+        optimizer = tf.train.AdamOptimizer(learning_rate=self.lr)
+        gradients, variables = zip(*optimizer.compute_gradients(loss))
+        gradients, self.global_norm = tf.clip_by_global_norm(gradients, 
+                                                self.config.gradient_clip_norm)
+        train_op = optimizer.apply_gradients(zip(gradients, variables))
+#        train_op = tf.train.AdamOptimizer(learning_rate=self.lr).minimize(loss)
         return loss, train_op
 
     def batch_to_feed(self, inputs, max_seq_len=None):
@@ -999,6 +1008,9 @@ if __name__ == '__main__':
         logging.info('Start training...')
         with tf.Session() as sess:
             sess.run(tf.global_variables_initializer())
+            if conf_args['model_save_path_initial']:
+                sysNN.load_trained_model(sess, 
+                                         conf_args['model_save_path_initial'])
             sysNN.train(sess)
             
     elif train_test == 'test':
