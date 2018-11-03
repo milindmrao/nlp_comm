@@ -541,7 +541,7 @@ class VSDecoder(object):
                             maximum_iterations = tf.shape(self.dec_inputs)[1],
                             scope='dec_lstm')
         bdec_preds = bdec_preds.predicted_ids
-        return (tf.cast(bdec_preds[:,:,-1],tf.int32),bdec_preds[:,:,:-1])       
+        return (tf.cast(bdec_preds[:,:,0],tf.int32),bdec_preds[:,:,1:])       
 
 class VSSystem(object):
     """This generates an end-to-end model that includes the sentence encoder,
