@@ -649,7 +649,7 @@ class VSSystem(object):
         tf.summary.scalar("CrossEntLoss", self.loss)
         tf.summary.scalar('lr',self.lr)
         tf.summary.scalar('help_prob',self.helper_prob)
-        tf.summary.histogram('global norm',self.global_norm)
+        tf.summary.histogram('global_norm',self.global_norm)
         tf.summary.histogram("enc_state_c", tf.concat(self.encoder.enc_state_c,axis=-1))
         tf.summary.histogram("enc_state_h", tf.concat(self.encoder.enc_state_h,axis=-1))
         tf.summary.histogram('enc_out',self.encoder.enc_output)
@@ -690,8 +690,8 @@ class VSSystem(object):
             labels=tf.one_hot(self.dec_targets, depth=self.config.vocab_out, dtype=tf.float32),
             logits=self.decoder.dec_logits,)
         # loss function
-#        loss = tf.reduce_sum(stepwise_cross_entropy*seq_mask)/tf.reduce_sum(seq_mask)
-        loss = tf.reduce_mean(stepwise_cross_entropy)
+        loss = tf.reduce_sum(stepwise_cross_entropy*seq_mask)/tf.reduce_sum(seq_mask)
+#        loss = tf.reduce_mean(stepwise_cross_entropy)
         
         # train it
         optimizer = tf.train.AdamOptimizer(learning_rate=self.lr)

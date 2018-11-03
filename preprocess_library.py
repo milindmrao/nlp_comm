@@ -366,7 +366,7 @@ def parse_args(arg_to_parse = None):
     parser.add_argument('--lr','-lr',default=0.001,type=float,help='learning rate')
     parser.add_argument('--lr_dec','-lrd',default=2,type=float,
         help='How much to decrease learning rate if validation acc does not improve')
-    parser.add_argument('--help_prob','-hp',nargs=2,default=[3,0.05],
+    parser.add_argument('--help_prob','-hp',nargs=2,default=[3,0.05], type=float,
         help='Start of help prob and rate of decreasing help prob')
     parser.add_argument('--numb_tx_bits','-ntx',default=400,type=int)
     parser.add_argument('--binarization_off','-bo',action='store_true',
