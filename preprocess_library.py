@@ -343,6 +343,8 @@ def generate_tb_filename(conf_args):
         
     if conf_args['variable_encoding']:
         tb_name += ('-v2' if conf_args['variable_encoding']==2 else '-v1')
+        
+    tb_name += '-'+conf_args['add_name']
     return tb_name
 
 
@@ -366,7 +368,7 @@ def parse_args(arg_to_parse = None):
     parser.add_argument('--lr','-lr',default=0.001,type=float,help='learning rate')
     parser.add_argument('--lr_dec','-lrd',default=2,type=float,
         help='How much to decrease learning rate if validation acc does not improve')
-    parser.add_argument('--help_prob','-hp',nargs=2,default=[3,0.05], type=float,
+    parser.add_argument('--help_prob','-hp',nargs=2,default=[8,0.02], type=float,
         help='Start of help prob and rate of decreasing help prob')
     parser.add_argument('--numb_tx_bits','-ntx',default=400,type=int)
     parser.add_argument('--binarization_off','-bo',action='store_true',
@@ -401,6 +403,7 @@ def parse_args(arg_to_parse = None):
     parser.add_argument('--summary_every','-sme',default=20,type=int)
     parser.add_argument('--peephole','-p',action='store_false')
     parser.add_argument('--beam_size','-bs',default=10,type=int)
+    parser.add_argument('--add_name','-an',default='')
     parser.add_argument('--add_name_results','-anr',default='')
     parser.add_argument('--unk_perc','-up',default=0.2,type=float)
     parser.add_argument('--qcap','-q',default=200,type=int)

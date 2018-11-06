@@ -537,10 +537,10 @@ class VSDecoder(object):
                                             bd_initial_state,
                                             self.beam_size,
                                             output_layer=self.out_proj)
-        bdec_preds,_,_ = tf.contrib.seq2seq.dynamic_decode(bdec,
+        bdec_preds_,_,_ = tf.contrib.seq2seq.dynamic_decode(bdec,
                             maximum_iterations = tf.shape(self.dec_inputs)[1],
                             scope='dec_lstm')
-        bdec_preds = bdec_preds.predicted_ids
+        bdec_preds = bdec_preds_.predicted_ids
         return (tf.cast(bdec_preds[:,:,0],tf.int32),bdec_preds[:,:,1:])       
 
 class VSSystem(object):
@@ -815,7 +815,7 @@ class VSSystem(object):
             sess.run(self.close_queue)
             coord.request_stop()
         
-    def train(self, sess):
+    def train(self, sess, train_op=None, should_load=True):
         """
         This trains the network. it uses a queue mechanism to feed in placement
         """
@@ -827,8 +827,11 @@ class VSSystem(object):
         self.epochs = 0
         self.training_counter = 1
         self.test_counter = 1
-
-        self.load_trained_model(sess,self.config.model_save_path,saver_type='all')
+        
+        if should_load:
+            self.load_trained_model(sess,self.config.model_save_path,
+                                    saver_type='all')
+        
         self._setup_tb()
         try:
             tb_writer = tf.summary.FileWriter(self.config.summ_path,session=sess)
@@ -839,6 +842,7 @@ class VSSystem(object):
         _val_acc = 0
         _bat_count = 0
         
+        train_op = train_op or self.train_op
         try:
             coord = tf.train.Coordinator()
             new_epoch = Event()
@@ -855,7 +859,7 @@ class VSSystem(object):
                     logging.info('Coord has requested a break in training')
                     break
                 self.training_counter += 1
-                (_, loss, tb_summ) = sess.run([self.train_op, self.loss, self.tb_summary])
+                (_, loss, tb_summ) = sess.run([train_op, self.loss, self.tb_summary])
                 
                 if self.training_counter% self.config.summary_every == 0:
                     tb_writer.add_summary(tb_summ, self.training_counter)
@@ -931,7 +935,7 @@ class VSSystem(object):
         if should_restore:
             self.load_trained_model(sess, self.config.model_save_path)
 
-        acc_list = []
+#        acc_list = []
         binarization_id = 2 if self.config.binarization_off else 1
         with open(self.config.test_results_path, 'w', newline='') as file:
             for batch in itertools.islice(self.test_data.get_next_batch(),
@@ -939,9 +943,11 @@ class VSSystem(object):
     
                 fd = self.next_feed(batch, binarization_id=binarization_id,
                                     help_prob = 0.0, in_queue=False)
-                predict_, accu_ = sess.run([self.decoder.dec_pred, self.accuracy,], fd)
-                acc_list.append(accu_)
-    
+                
+#                predict_, accu_ = sess.run([self.decoder.dec_pred, self.accuracy,], fd)
+#                acc_list.append(accu_)
+                predict_= sess.run(self.decoder.dec_pred, fd)
+                
                 for i, (inp, pred) in enumerate(zip(batch, predict_)):
                     tx = " ".join(self.word2numb.convert_n2w(inp[0]))
                     ax = ' '.join(self.word2numb.convert_n2w(inp[1]))
@@ -952,7 +958,7 @@ class VSSystem(object):
                     file.write('RX: {}\n'.format(rx))
                     
 
-            file.write("Average Accuracy: {}\n".format(np.average(acc_list)))
+#            file.write("Average Accuracy: {}\n".format(np.average(acc_list)))
         
     def test_sentence(self, sess, list_sentences):
         """ Accepts a single sentence or list of sentences, returns predictions,
